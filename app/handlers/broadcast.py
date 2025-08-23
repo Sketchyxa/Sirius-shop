@@ -38,15 +38,45 @@ async def process_broadcast_message(message: Message, state: FSMContext):
         await message.answer("❌ Рассылка отменена")
         return
     
-    # Очищаем текст от неподдерживаемых HTML-тегов
+    # Очищаем текст от неподдерживаемых HTML-тегов и исправляем незакрытые теги
     import re
     clean_text = message.text
+    
     # Удаляем неподдерживаемые теги
     clean_text = re.sub(r'<p[^>]*>', '', clean_text)
     clean_text = re.sub(r'</p>', '\n', clean_text)
     clean_text = re.sub(r'<br[^>]*>', '\n', clean_text)
     clean_text = re.sub(r'<div[^>]*>', '', clean_text)
     clean_text = re.sub(r'</div>', '\n', clean_text)
+    
+    # Исправляем незакрытые теги
+    # Подсчитываем количество открытых и закрытых тегов
+    open_b_tags = len(re.findall(r'<b[^>]*>', clean_text))
+    close_b_tags = len(re.findall(r'</b>', clean_text))
+    
+    # Если есть незакрытые теги <b>, добавляем их в конец
+    if open_b_tags > close_b_tags:
+        missing_tags = open_b_tags - close_b_tags
+        clean_text += '</b>' * missing_tags
+    
+    # Аналогично для других тегов
+    open_i_tags = len(re.findall(r'<i[^>]*>', clean_text))
+    close_i_tags = len(re.findall(r'</i>', clean_text))
+    if open_i_tags > close_i_tags:
+        missing_tags = open_i_tags - close_i_tags
+        clean_text += '</i>' * missing_tags
+    
+    open_u_tags = len(re.findall(r'<u[^>]*>', clean_text))
+    close_u_tags = len(re.findall(r'</u>', clean_text))
+    if open_u_tags > close_u_tags:
+        missing_tags = open_u_tags - close_u_tags
+        clean_text += '</u>' * missing_tags
+    
+    open_s_tags = len(re.findall(r'<s[^>]*>', clean_text))
+    close_s_tags = len(re.findall(r'</s>', clean_text))
+    if open_s_tags > close_s_tags:
+        missing_tags = open_s_tags - close_s_tags
+        clean_text += '</s>' * missing_tags
     
     # Сохраняем очищенный текст сообщения
     await state.update_data(broadcast_text=clean_text)
