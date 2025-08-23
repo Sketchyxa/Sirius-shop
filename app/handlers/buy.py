@@ -377,10 +377,9 @@ async def on_successful_payment(
         
         # Уведомляем админа о покупке
         try:
-            from app.bot import bot
             username = message.from_user.username or message.from_user.first_name or "Неизвестный"
             await notify_admin_about_purchase(
-                bot=bot,
+                bot=message.bot,
                 user_id=message.from_user.id,
                 username=username,
                 product_name=product.name,
@@ -617,10 +616,9 @@ async def confirm_purchase(callback: CallbackQuery, product_repo: ProductReposit
         
         # Уведомляем админа о покупке
         try:
-            from app.bot import bot
             username = callback.from_user.username or callback.from_user.first_name or "Неизвестный"
             await notify_admin_about_purchase(
-                bot=bot,
+                bot=callback.bot,
                 user_id=callback.from_user.id,
                 username=username,
                 product_name=product.name,
@@ -997,10 +995,9 @@ async def check_payment(
             
             # Уведомляем админа о покупке
             try:
-                from app.bot import bot
                 username = callback.from_user.username or callback.from_user.first_name or "Неизвестный"
                 await notify_admin_about_purchase(
-                    bot=bot,
+                    bot=callback.bot,
                     user_id=callback.from_user.id,
                     username=username,
                     product_name=product.name,
