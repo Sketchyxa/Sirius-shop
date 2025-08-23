@@ -38,8 +38,18 @@ async def process_broadcast_message(message: Message, state: FSMContext):
         await message.answer("❌ Рассылка отменена")
         return
     
-    # Сохраняем текст сообщения
-    await state.update_data(broadcast_text=message.text)
+    # Очищаем текст от неподдерживаемых HTML-тегов
+    import re
+    clean_text = message.text
+    # Удаляем неподдерживаемые теги
+    clean_text = re.sub(r'<p[^>]*>', '', clean_text)
+    clean_text = re.sub(r'</p>', '\n', clean_text)
+    clean_text = re.sub(r'<br[^>]*>', '\n', clean_text)
+    clean_text = re.sub(r'<div[^>]*>', '', clean_text)
+    clean_text = re.sub(r'</div>', '\n', clean_text)
+    
+    # Сохраняем очищенный текст сообщения
+    await state.update_data(broadcast_text=clean_text)
     
     # Запрашиваем подтверждение
     await state.set_state(Broadcast.confirm_broadcast)
@@ -47,7 +57,7 @@ async def process_broadcast_message(message: Message, state: FSMContext):
     await message.answer(
         "📨 <b>Подтверждение рассылки</b>\n\n"
         "Вот как будет выглядеть ваше сообщение:\n\n"
-        f"{message.text}\n\n"
+        f"{clean_text}\n\n"
         "Вы уверены, что хотите отправить это сообщение всем пользователям?",
         reply_markup=get_broadcast_keyboard(),
         parse_mode=ParseMode.HTML
