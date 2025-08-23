@@ -720,3 +720,11 @@ class ProductItemRepository(BaseRepository):
         )
         
         return result.modified_count > 0
+    
+    async def delete_items_by_product(self, product_id: Union[str, ObjectId]) -> int:
+        """Удалить все позиции товара"""
+        if isinstance(product_id, str):
+            product_id = ObjectId(product_id)
+        
+        result = await self.db.product_items.delete_many({"product_id": product_id})
+        return result.deleted_count

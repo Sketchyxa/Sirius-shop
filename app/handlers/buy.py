@@ -338,6 +338,14 @@ async def back_to_products(callback: CallbackQuery, product_repo: ProductReposit
             await callback.message.delete()
         except TelegramBadRequest:
             pass
+    except Exception as e:
+        # Обработка любых других исключений
+        logger.error(f"Неожиданная ошибка в back_to_products: {e}")
+        await callback.message.answer(
+            "🛒 <b>Выберите товар для покупки:</b>",
+            reply_markup=get_products_keyboard(products),
+            parse_mode=ParseMode.HTML
+        )
     
     await callback.answer()
 

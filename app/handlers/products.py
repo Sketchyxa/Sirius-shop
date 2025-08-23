@@ -1240,6 +1240,123 @@ async def stars_off(callback: CallbackQuery, product_repo: ProductRepository):
     )
     await callback.answer()
 
+
+@router.callback_query(F.data.startswith("admin:delete_product:"))
+async def delete_product_confirm(callback: CallbackQuery, state: FSMContext, product_repo: ProductRepository):
+    """Подтверждение удаления товара"""
+    # Получаем ID товара
+    product_id = callback.data.split(":")[-1]
+    
+    # Сохраняем ID товара в состоянии
+    await state.update_data(product_id=product_id)
+    await state.set_state(ProductManagement.delete_product_confirm)
+    
+    # Получаем товар
+    product = await product_repo.get_product(product_id)
+    
+    if not product:
+        await callback.message.edit_text(
+            "❌ <b>Ошибка</b>\n\n"
+            "Товар не найден.",
+            reply_markup=get_products_management_keyboard(),
+            parse_mode=ParseMode.HTML
+        )
+        await callback.answer()
+        await state.clear()
+        return
+    
+    # Создаем клавиатуру для подтверждения
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    
+    kb = InlineKeyboardBuilder()
+    kb.row(
+        InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"admin:delete_product_confirm:{product_id}"),
+        InlineKeyboardButton(text="❌ Нет, отмена", callback_data=f"admin:product:{product_id}")
+    )
+    
+    await callback.message.edit_text(
+        f"❓ <b>Подтверждение удаления</b>\n\n"
+        f"Вы действительно хотите удалить товар <b>{product.name}</b>?\n\n"
+        f"📦 Товар: {product.name}\n"
+        f"💰 Цена: {product.price:.2f}₽\n"
+        f"🔢 Количество: {product.quantity} шт.\n"
+        f"📊 Продано: {product.sales_count} шт.\n\n"
+        "⚠️ Внимание! Это действие нельзя отменить!",
+        reply_markup=kb.as_markup(),
+        parse_mode=ParseMode.HTML
+    )
+    
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:delete_product_confirm:"))
+async def delete_product_process(callback: CallbackQuery, state: FSMContext, product_repo: ProductRepository, product_item_repo: ProductItemRepository):
+    """Процесс удаления товара"""
+    # Получаем ID товара
+    product_id = callback.data.split(":")[-1]
+    
+    try:
+        # Получаем товар
+        product = await product_repo.get_product(product_id)
+        
+        if not product:
+            await callback.message.edit_text(
+                "❌ <b>Ошибка</b>\n\n"
+                "Товар не найден.",
+                reply_markup=get_products_management_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+            await callback.answer()
+            await state.clear()
+            return
+        
+        # Сохраняем информацию о товаре для отчета
+        product_name = product.name
+        product_price = product.price
+        product_quantity = product.quantity
+        product_sales = product.sales_count
+        
+        # Удаляем все позиции товара
+        await product_item_repo.delete_items_by_product(product_id)
+        
+        # Удаляем товар
+        result = await product_repo.delete_product(product_id)
+        
+        if result:
+            await callback.message.edit_text(
+                "✅ <b>Товар удален</b>\n\n"
+                f"Товар <b>{product_name}</b> успешно удален.\n\n"
+                f"📦 Название: {product_name}\n"
+                f"💰 Цена: {product_price:.2f}₽\n"
+                f"🔢 Количество: {product_quantity} шт.\n"
+                f"📊 Продано: {product_sales} шт.\n\n"
+                "Все позиции товара также были удалены.",
+                reply_markup=get_products_management_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await callback.message.edit_text(
+                "❌ <b>Ошибка</b>\n\n"
+                "Не удалось удалить товар.",
+                reply_markup=get_products_management_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+        
+        await callback.answer()
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Ошибка при удалении товара: {e}")
+        await callback.message.edit_text(
+            "❌ <b>Ошибка при удалении товара</b>\n\n"
+            "Попробуйте еще раз позже или обратитесь к разработчику.",
+            reply_markup=get_products_management_keyboard(),
+            parse_mode=ParseMode.HTML
+        )
+        await callback.answer()
+        await state.clear()
+
 @router.message(ProductManagement.edit_product_instruction)
 async def set_instruction_process(message: Message, state: FSMContext, product_repo: ProductRepository):
     """Сохраняем ссылку на инструкцию"""
