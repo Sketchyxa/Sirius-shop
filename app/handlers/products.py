@@ -1422,13 +1422,6 @@ async def set_instruction_process(message: Message, state: FSMContext, product_r
 @router.message(ProductManagement.upload_image, F.photo)
 async def process_upload_image(message: Message, state: FSMContext, product_repo: ProductRepository):
     """Обработка загрузки изображения товара"""
-    if message.text == "/cancel":
-        await state.clear()
-        await message.answer(
-            "❌ Загрузка изображения отменена",
-            reply_markup=get_products_management_keyboard()
-        )
-        return
     
     # Получаем ID товара из состояния
     data = await state.get_data()
@@ -1487,6 +1480,14 @@ async def process_upload_image(message: Message, state: FSMContext, product_repo
 @router.message(ProductManagement.upload_image)
 async def process_upload_image_text(message: Message, state: FSMContext):
     """Обработка текста вместо изображения"""
+    if message.text == "/cancel":
+        await state.clear()
+        await message.answer(
+            "❌ Загрузка изображения отменена",
+            reply_markup=get_products_management_keyboard()
+        )
+        return
+    
     await message.answer(
         "❌ <b>Ошибка</b>\n\n"
         "Пожалуйста, отправьте изображение, а не текст.\n"
