@@ -6,6 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest
 from loguru import logger
 import uuid
+from datetime import datetime
 
 from app.database.repositories import UserRepository, ProductRepository, TransactionRepository, ProductItemRepository
 from app.database.models import Transaction
@@ -26,6 +27,52 @@ from aiogram.types import LabeledPrice, PreCheckoutQuery
 
 
 router = Router()
+
+
+async def notify_admin_about_purchase(
+    bot,
+    user_id: int,
+    username: str,
+    product_name: str,
+    amount: float,
+    payment_method: str,
+    receipt_id: str
+):
+    """Отправляет уведомление админу о новой покупке"""
+    try:
+        # Получаем список админов из конфигурации
+        from app.config import load_config
+        config = load_config()
+        admin_ids = config.bot.admin_ids
+        
+        if not admin_ids:
+            logger.warning("Список админов пуст, уведомление не отправлено")
+            return
+        
+        # Формируем текст уведомления
+        notification_text = (
+            f"🛒 <b>Новая покупка!</b>\n\n"
+            f"👤 Покупатель: <b>{username}</b> (ID: <code>{user_id}</code>)\n"
+            f"📦 Товар: <b>{product_name}</b>\n"
+            f"💰 Сумма: <b>{amount:.2f}₽</b>\n"
+            f"💳 Способ оплаты: <b>{payment_method}</b>\n"
+            f"🧾 Чек: <code>{receipt_id}</code>\n"
+            f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}"
+        )
+        
+        # Отправляем уведомление всем админам
+        for admin_id in admin_ids:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=notification_text,
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отправить уведомление админу {admin_id}: {e}")
+                
+    except Exception as e:
+        logger.error(f"Ошибка при отправке уведомления админу: {e}")
 
 
 @router.message(Command("buy"))
@@ -149,6 +196,25 @@ async def start_purchase_stars(callback: CallbackQuery, product_repo: ProductRep
     if not product or not (product.stars_enabled and product.stars_price):
         await callback.answer("Оплата звездами недоступна", show_alert=True)
         return
+    
+    # Проверяем, есть ли текст в сообщении для редактирования
+    if not callback.message.text:
+        # Если сообщение не содержит текст (например, это сообщение с фото),
+        # отправляем новое сообщение
+        await callback.message.answer(
+            f"✨ <b>Покупка за звезды</b>\n\n"
+            f"📦 Товар: <b>{product.name}</b>\n"
+            f"✨ Стоимость: <b>{int(product.stars_price)} ⭐</b>\n\n"
+            f"Нажмите кнопку 'Купить за звезды' ниже, чтобы продолжить в интерфейсе Telegram.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✨ Купить за звезды", callback_data=f"buy_stars_confirm:{product.id}")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data=f"product:{product.id}")]
+            ]),
+            parse_mode=ParseMode.HTML
+        )
+        await callback.answer()
+        return
+    
     try:
         await callback.message.edit_text(
             f"✨ <b>Покупка за звезды</b>\n\n"
@@ -308,6 +374,23 @@ async def on_successful_payment(
         if product.instruction_link:
             receipt_text += f"📖 <b>Инструкция:</b> <a href='{product.instruction_link}'>Ссылка на инструкцию</a>\n\n"
         await message.answer(receipt_text + "Спасибо за покупку! ✨", parse_mode=ParseMode.HTML)
+        
+        # Уведомляем админа о покупке
+        try:
+            from app.bot import bot
+            username = message.from_user.username or message.from_user.first_name or "Неизвестный"
+            await notify_admin_about_purchase(
+                bot=bot,
+                user_id=message.from_user.id,
+                username=username,
+                product_name=product.name,
+                amount=product.stars_price,
+                payment_method="Звезды Telegram",
+                receipt_id=receipt_id
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при отправке уведомления админу: {e}")
+            
     except Exception as e:
         logger.error(f"Ошибка обработки успешной оплаты Stars: {e}")
         await message.answer("❌ Ошибка при обработке платежа звездами", parse_mode=ParseMode.HTML)
@@ -531,6 +614,22 @@ async def confirm_purchase(callback: CallbackQuery, product_repo: ProductReposit
             )
         
         await callback.answer("✅ Покупка успешно совершена", show_alert=True)
+        
+        # Уведомляем админа о покупке
+        try:
+            from app.bot import bot
+            username = callback.from_user.username or callback.from_user.first_name or "Неизвестный"
+            await notify_admin_about_purchase(
+                bot=bot,
+                user_id=callback.from_user.id,
+                username=username,
+                product_name=product.name,
+                amount=product.price,
+                payment_method="Баланс",
+                receipt_id=transaction.receipt_id
+            )
+        except Exception as e:
+            logger.error(f"Ошибка при отправке уведомления админу: {e}")
         
     except Exception as e:
         logger.error(f"Ошибка при совершении покупки: {e}")
@@ -895,6 +994,22 @@ async def check_payment(
                 )
             
             await callback.answer("✅ Оплата подтверждена", show_alert=True)
+            
+            # Уведомляем админа о покупке
+            try:
+                from app.bot import bot
+                username = callback.from_user.username or callback.from_user.first_name or "Неизвестный"
+                await notify_admin_about_purchase(
+                    bot=bot,
+                    user_id=callback.from_user.id,
+                    username=username,
+                    product_name=product.name,
+                    amount=transaction.amount,
+                    payment_method="Криптовалюта",
+                    receipt_id=transaction.receipt_id
+                )
+            except Exception as e:
+                logger.error(f"Ошибка при отправке уведомления админу: {e}")
             
         elif status == "active":
             # Счет еще не оплачен
