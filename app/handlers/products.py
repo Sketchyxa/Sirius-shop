@@ -611,12 +611,20 @@ async def list_products(callback: CallbackQuery, product_repo: ProductRepository
     products = await product_repo.get_all_products()
     
     if not products:
-        await callback.message.edit_text(
-            "📦 <b>Список товаров</b>\n\n"
-            "Товары не найдены. Добавьте новый товар.",
-            reply_markup=get_products_management_keyboard(),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await callback.message.edit_text(
+                "📦 <b>Список товаров</b>\n\n"
+                "Товары не найдены. Добавьте новый товар.",
+                reply_markup=get_products_management_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                # Сообщение уже содержит нужный текст, просто отвечаем
+                await callback.answer("Список товаров обновлен")
+            else:
+                # Другая ошибка, пробрасываем её
+                raise
         await callback.answer()
         return
     
@@ -659,11 +667,19 @@ async def list_products(callback: CallbackQuery, product_repo: ProductRepository
     if len(text) > 4000:
         text = "📦 <b>Список товаров</b>\n\n" + "Выберите товар для управления:"
     
-    await callback.message.edit_text(
-        text,
-        reply_markup=kb.as_markup(),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        await callback.message.edit_text(
+            text,
+            reply_markup=kb.as_markup(),
+            parse_mode=ParseMode.HTML
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            # Сообщение уже содержит нужный текст, просто отвечаем
+            await callback.answer("Список товаров обновлен")
+        else:
+            # Другая ошибка, пробрасываем её
+            raise
     
     await callback.answer()
 
@@ -679,12 +695,18 @@ async def product_actions(callback: CallbackQuery, product_repo: ProductReposito
         product = await product_repo.get_product(product_id)
         
         if not product:
-            await callback.message.edit_text(
-                "❌ Ошибка\n\n"
-                "Товар не найден.",
-                reply_markup=get_products_management_keyboard(),
-                parse_mode=ParseMode.HTML
-            )
+            try:
+                await callback.message.edit_text(
+                    "❌ Ошибка\n\n"
+                    "Товар не найден.",
+                    reply_markup=get_products_management_keyboard(),
+                    parse_mode=ParseMode.HTML
+                )
+            except TelegramBadRequest as e:
+                if "message is not modified" in str(e):
+                    await callback.answer("Товар не найден")
+                else:
+                    raise
             await callback.answer()
             return
         
@@ -726,21 +748,33 @@ async def product_actions(callback: CallbackQuery, product_repo: ProductReposito
         else:
             product_info += f"✨ Оплата звездами: Выключена\n"
         
-        await callback.message.edit_text(
-            product_info + "\nВыберите действие:",
-            reply_markup=get_admin_product_actions_keyboard(str(product.id))
-        )
+        try:
+            await callback.message.edit_text(
+                product_info + "\nВыберите действие:",
+                reply_markup=get_admin_product_actions_keyboard(str(product.id))
+            )
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                await callback.answer("Информация о товаре обновлена")
+            else:
+                raise
         
         await callback.answer()
         
     except Exception as e:
         logger.error(f"Ошибка при получении товара: {e}")
-        await callback.message.edit_text(
-            "❌ Ошибка\n\n"
-            "Не удалось получить информацию о товаре.",
-            reply_markup=get_products_management_keyboard(),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await callback.message.edit_text(
+                "❌ Ошибка\n\n"
+                "Не удалось получить информацию о товаре.",
+                reply_markup=get_products_management_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+        except TelegramBadRequest as e:
+            if "message is not modified" in str(e):
+                await callback.answer("Произошла ошибка")
+            else:
+                raise
         await callback.answer()
 
 
