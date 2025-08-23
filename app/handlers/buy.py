@@ -120,11 +120,23 @@ async def show_product(callback: CallbackQuery, product_repo: ProductRepository)
                     parse_mode=ParseMode.HTML
                 )
     else:
-        await callback.message.edit_text(
-            text=text,
-            reply_markup=get_user_product_actions_keyboard(str(product.id), bool(product.stars_enabled and product.stars_price)),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await callback.message.edit_text(
+                text=text,
+                reply_markup=get_user_product_actions_keyboard(str(product.id), bool(product.stars_enabled and product.stars_price)),
+                parse_mode=ParseMode.HTML
+            )
+        except TelegramBadRequest as e:
+            logger.warning(f"Не удалось отредактировать сообщение в show_product: {e}")
+            await callback.message.answer(
+                text=text,
+                reply_markup=get_user_product_actions_keyboard(str(product.id), bool(product.stars_enabled and product.stars_price)),
+                parse_mode=ParseMode.HTML
+            )
+            try:
+                await callback.message.delete()
+            except TelegramBadRequest:
+                pass
     
     await callback.answer()
 
@@ -137,17 +149,35 @@ async def start_purchase_stars(callback: CallbackQuery, product_repo: ProductRep
     if not product or not (product.stars_enabled and product.stars_price):
         await callback.answer("Оплата звездами недоступна", show_alert=True)
         return
-    await callback.message.edit_text(
-        f"✨ <b>Покупка за звезды</b>\n\n"
-        f"📦 Товар: <b>{product.name}</b>\n"
-        f"✨ Стоимость: <b>{int(product.stars_price)} ⭐</b>\n\n"
-        f"Нажмите кнопку 'Купить за звезды' ниже, чтобы продолжить в интерфейсе Telegram.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✨ Купить за звезды", callback_data=f"buy_stars_confirm:{product.id}")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data=f"product:{product.id}")]
-        ]),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        await callback.message.edit_text(
+            f"✨ <b>Покупка за звезды</b>\n\n"
+            f"📦 Товар: <b>{product.name}</b>\n"
+            f"✨ Стоимость: <b>{int(product.stars_price)} ⭐</b>\n\n"
+            f"Нажмите кнопку 'Купить за звезды' ниже, чтобы продолжить в интерфейсе Telegram.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✨ Купить за звезды", callback_data=f"buy_stars_confirm:{product.id}")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data=f"product:{product.id}")]
+            ]),
+            parse_mode=ParseMode.HTML
+        )
+    except TelegramBadRequest as e:
+        logger.warning(f"Не удалось отредактировать сообщение в start_purchase_stars: {e}")
+        await callback.message.answer(
+            f"✨ <b>Покупка за звезды</b>\n\n"
+            f"📦 Товар: <b>{product.name}</b>\n"
+            f"✨ Стоимость: <b>{int(product.stars_price)} ⭐</b>\n\n"
+            f"Нажмите кнопку 'Купить за звезды' ниже, чтобы продолжить в интерфейсе Telegram.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✨ Купить за звезды", callback_data=f"buy_stars_confirm:{product.id}")],
+                [InlineKeyboardButton(text="🔙 Назад", callback_data=f"product:{product.id}")]
+            ]),
+            parse_mode=ParseMode.HTML
+        )
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest:
+            pass
     await callback.answer()
 
 
@@ -288,11 +318,26 @@ async def back_to_products(callback: CallbackQuery, product_repo: ProductReposit
     """Возврат к списку товаров"""
     products = await product_repo.get_all_products(available_only=True)
     
-    await callback.message.edit_text(
-        "🛒 <b>Выберите товар для покупки:</b>",
-        reply_markup=get_products_keyboard(products),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        await callback.message.edit_text(
+            "🛒 <b>Выберите товар для покупки:</b>",
+            reply_markup=get_products_keyboard(products),
+            parse_mode=ParseMode.HTML
+        )
+    except TelegramBadRequest as e:
+        # Если не удается отредактировать сообщение (например, это сообщение с фото),
+        # отправляем новое сообщение
+        logger.warning(f"Не удалось отредактировать сообщение в back_to_products: {e}")
+        await callback.message.answer(
+            "🛒 <b>Выберите товар для покупки:</b>",
+            reply_markup=get_products_keyboard(products),
+            parse_mode=ParseMode.HTML
+        )
+        # Удаляем старое сообщение, если возможно
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest:
+            pass
     
     await callback.answer()
 
@@ -318,15 +363,32 @@ async def start_purchase(callback: CallbackQuery, state: FSMContext, product_rep
         return
     
     if user.balance < product.price:
-        await callback.message.edit_text(
-            f"❌ Недостаточно средств\n\n"
-            f"📦 Товар: {product.name}\n"
-            f"💰 Цена: {product.price:.2f}₽\n"
-            f"💳 Ваш баланс: {user.balance:.2f}₽\n\n"
-            f"Необходимо пополнить баланс на {product.price - user.balance:.2f}₽",
-            reply_markup=get_products_keyboard([]),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await callback.message.edit_text(
+                f"❌ Недостаточно средств\n\n"
+                f"📦 Товар: {product.name}\n"
+                f"💰 Цена: {product.price:.2f}₽\n"
+                f"💳 Ваш баланс: {user.balance:.2f}₽\n\n"
+                f"Необходимо пополнить баланс на {product.price - user.balance:.2f}₽",
+                reply_markup=get_products_keyboard([]),
+                parse_mode=ParseMode.HTML
+            )
+        except TelegramBadRequest as e:
+            logger.warning(f"Не удалось отредактировать сообщение при недостатке средств: {e}")
+            await callback.message.answer(
+                f"❌ Недостаточно средств\n\n"
+                f"📦 Товар: {product.name}\n"
+                f"💰 Цена: {product.price:.2f}₽\n"
+                f"💳 Ваш баланс: {user.balance:.2f}₽\n\n"
+                f"Необходимо пополнить баланс на {product.price - user.balance:.2f}₽",
+                reply_markup=get_products_keyboard([]),
+                parse_mode=ParseMode.HTML
+            )
+            # Удаляем старое сообщение, если возможно
+            try:
+                await callback.message.delete()
+            except TelegramBadRequest:
+                pass
         await callback.answer()
         return
     
@@ -472,12 +534,27 @@ async def cancel_purchase(callback: CallbackQuery, product_repo: ProductReposito
     """Отмена покупки"""
     products = await product_repo.get_all_products(available_only=True)
     
-    await callback.message.edit_text(
-        "❌ <b>Покупка отменена</b>\n\n"
-        "Вы можете вернуться к списку товаров или выбрать другой товар.",
-        reply_markup=get_products_keyboard(products),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        await callback.message.edit_text(
+            "❌ <b>Покупка отменена</b>\n\n"
+            "Вы можете вернуться к списку товаров или выбрать другой товар.",
+            reply_markup=get_products_keyboard(products),
+            parse_mode=ParseMode.HTML
+        )
+    except TelegramBadRequest as e:
+        # Если не удается отредактировать сообщение, отправляем новое
+        logger.warning(f"Не удалось отредактировать сообщение в cancel_purchase: {e}")
+        await callback.message.answer(
+            "❌ <b>Покупка отменена</b>\n\n"
+            "Вы можете вернуться к списку товаров или выбрать другой товар.",
+            reply_markup=get_products_keyboard(products),
+            parse_mode=ParseMode.HTML
+        )
+        # Удаляем старое сообщение, если возможно
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest:
+            pass
     
     await callback.answer()
 
@@ -519,12 +596,25 @@ async def crypto_payment(
     crypto_pay_token = await settings_service.get_crypto_pay_token()
     
     if not crypto_pay_token:
-        await callback.message.edit_text(
-            "❌ <b>Оплата криптовалютой временно недоступна</b>\n\n"
-            "Пожалуйста, выберите другой способ оплаты или попробуйте позже.",
-            reply_markup=get_payment_method_keyboard(),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await callback.message.edit_text(
+                "❌ <b>Оплата криптовалютой временно недоступна</b>\n\n"
+                "Пожалуйста, выберите другой способ оплаты или попробуйте позже.",
+                reply_markup=get_payment_method_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+        except TelegramBadRequest as e:
+            logger.warning(f"Не удалось отредактировать сообщение при недоступности Crypto Pay: {e}")
+            await callback.message.answer(
+                "❌ <b>Оплата криптовалютой временно недоступна</b>\n\n"
+                "Пожалуйста, выберите другой способ оплаты или попробуйте позже.",
+                reply_markup=get_payment_method_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+            try:
+                await callback.message.delete()
+            except TelegramBadRequest:
+                pass
         await callback.answer()
         return
     
@@ -575,28 +665,59 @@ async def crypto_payment(
         # Переходим к ожиданию оплаты
         await state.set_state(BuyProduct.waiting_payment)
         
-        await callback.message.edit_text(
-            f"💰 <b>Оплата заказа</b>\n\n"
-            f"📦 Товар: <b>{product_name}</b>\n"
-            f"💰 Сумма: <b>{product_price:.2f}₽</b>\n"
-            f"💱 Валюта: <b>{crypto}</b>\n\n"
-            f"Для оплаты перейдите по <a href='{pay_url}'>ссылке</a> и следуйте инструкциям.\n"
-            f"После оплаты нажмите кнопку «Проверить оплату».\n\n"
-            f"Номер заказа: <code>{receipt_id}</code>",
-            reply_markup=get_confirm_purchase_keyboard(),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await callback.message.edit_text(
+                f"💰 <b>Оплата заказа</b>\n\n"
+                f"📦 Товар: <b>{product_name}</b>\n"
+                f"💰 Сумма: <b>{product_price:.2f}₽</b>\n"
+                f"💱 Валюта: <b>{crypto}</b>\n\n"
+                f"Для оплаты перейдите по <a href='{pay_url}'>ссылке</a> и следуйте инструкциям.\n"
+                f"После оплаты нажмите кнопку «Проверить оплату».\n\n"
+                f"Номер заказа: <code>{receipt_id}</code>",
+                reply_markup=get_confirm_purchase_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+        except TelegramBadRequest as e:
+            logger.warning(f"Не удалось отредактировать сообщение при создании инвойса: {e}")
+            await callback.message.answer(
+                f"💰 <b>Оплата заказа</b>\n\n"
+                f"📦 Товар: <b>{product_name}</b>\n"
+                f"💰 Сумма: <b>{product_price:.2f}₽</b>\n"
+                f"💱 Валюта: <b>{crypto}</b>\n\n"
+                f"Для оплаты перейдите по <a href='{pay_url}'>ссылке</a> и следуйте инструкциям.\n"
+                f"После оплаты нажмите кнопку «Проверить оплату».\n\n"
+                f"Номер заказа: <code>{receipt_id}</code>",
+                reply_markup=get_confirm_purchase_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+            try:
+                await callback.message.delete()
+            except TelegramBadRequest:
+                pass
         
         await callback.answer()
         
     except Exception as e:
         logger.error(f"Ошибка при создании инвойса: {e}")
-        await callback.message.edit_text(
-            "❌ <b>Произошла ошибка при создании счета на оплату</b>\n\n"
-            "Пожалуйста, попробуйте позже или выберите другой способ оплаты.",
-            reply_markup=get_payment_method_keyboard(),
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            await callback.message.edit_text(
+                "❌ <b>Произошла ошибка при создании счета на оплату</b>\n\n"
+                "Пожалуйста, попробуйте позже или выберите другой способ оплаты.",
+                reply_markup=get_payment_method_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+        except TelegramBadRequest as edit_error:
+            logger.warning(f"Не удалось отредактировать сообщение при ошибке создания инвойса: {edit_error}")
+            await callback.message.answer(
+                "❌ <b>Произошла ошибка при создании счета на оплату</b>\n\n"
+                "Пожалуйста, попробуйте позже или выберите другой способ оплаты.",
+                reply_markup=get_payment_method_keyboard(),
+                parse_mode=ParseMode.HTML
+            )
+            try:
+                await callback.message.delete()
+            except TelegramBadRequest:
+                pass
         await callback.answer()
 
 
@@ -618,12 +739,25 @@ async def cancel_payment(callback: CallbackQuery, state: FSMContext):
     """Отмена оплаты"""
     await state.clear()
     
-    await callback.message.edit_text(
-        "❌ <b>Оплата отменена</b>\n\n"
-        "Вы можете вернуться к списку товаров или выбрать другой товар.",
-        reply_markup=get_products_keyboard([]),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        await callback.message.edit_text(
+            "❌ <b>Оплата отменена</b>\n\n"
+            "Вы можете вернуться к списку товаров или выбрать другой товар.",
+            reply_markup=get_products_keyboard([]),
+            parse_mode=ParseMode.HTML
+        )
+    except TelegramBadRequest as e:
+        logger.warning(f"Не удалось отредактировать сообщение в cancel_payment: {e}")
+        await callback.message.answer(
+            "❌ <b>Оплата отменена</b>\n\n"
+            "Вы можете вернуться к списку товаров или выбрать другой товар.",
+            reply_markup=get_products_keyboard([]),
+            parse_mode=ParseMode.HTML
+        )
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest:
+            pass
     
     await callback.answer()
 
@@ -795,11 +929,24 @@ async def cancel_operation(callback: CallbackQuery, state: FSMContext):
     if current_state:
         await state.clear()
     
-    await callback.message.edit_text(
-        "❌ <b>Операция отменена</b>\n\n"
-        "Вы можете вернуться к списку товаров или выбрать другой товар.",
-        reply_markup=get_products_keyboard([]),
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        await callback.message.edit_text(
+            "❌ <b>Операция отменена</b>\n\n"
+            "Вы можете вернуться к списку товаров или выбрать другой товар.",
+            reply_markup=get_products_keyboard([]),
+            parse_mode=ParseMode.HTML
+        )
+    except TelegramBadRequest as e:
+        logger.warning(f"Не удалось отредактировать сообщение в cancel_operation: {e}")
+        await callback.message.answer(
+            "❌ <b>Операция отменена</b>\n\n"
+            "Вы можете вернуться к списку товаров или выбрать другой товар.",
+            reply_markup=get_products_keyboard([]),
+            parse_mode=ParseMode.HTML
+        )
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest:
+            pass
     
     await callback.answer()
